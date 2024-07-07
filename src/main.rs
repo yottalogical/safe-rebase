@@ -1,88 +1,140 @@
-use std::collections::HashMap;
+use std::{collections::HashSet, process::Command};
 
-use git2::{Commit, Oid, Repository};
-
-// Reasons to that it might be unsafe to rebase
-// 1. A commit not being rebased is a child of a commit being rebased
-//      (but don't worry about commits that don't belong to any reference)
-// 2. A branch not being rebased is pointing to a commit being rebased
-// 3. A merge commit is being rebased
-//      (this one might be okay, since the rebase command drops merge commits by default)
+use git2::{Branch, BranchType, Oid, Reference, Repository};
 
 fn main() {
-    let repo = Repository::discover("test-repo").unwrap();
-
     let upstream = "k";
     let branch = "main";
 
-    let upstream = short_name_to_oid(&repo, upstream);
-    let branch = short_name_to_oid(&repo, branch);
+    // Get repo
+    let repo = Repository::discover("test-repo").unwrap();
 
-    let commits_to_rebase = get_commits_to_rebase(&repo, upstream, branch);
+    // Prefetch
+    prefetch(&repo);
 
-    let commits_to_children = get_commits_to_children(&repo);
+    // Calculate upstream and branch
+    let upstream = repo.resolve_reference_from_short_name(upstream).unwrap();
+    let branch = repo.find_branch(branch, BranchType::Local).unwrap();
 
-    println!("commits_to_rebase:");
-    for rev in commits_to_rebase {
-        let commit = repo.find_commit(rev).unwrap();
-        println!("{}", commit.message().unwrap().trim());
-    }
-    println!("");
+    // Find all references (excluding branch)
+    let references = find_all_references(&repo, &branch);
 
-    println!("commits_to_children:");
-    for (parent, children) in commits_to_children {
-        let parent = repo.find_commit(parent).unwrap();
+    // Get all commits that will be rebased
+    let commits_to_rebase = get_commits_to_rebase(&repo, &upstream, &branch);
 
+    // Look for commits
+    let unsafe_to_rebase = look_for_commits(&repo, &references, &commits_to_rebase);
+
+    // Perform rebase
+    if unsafe_to_rebase {
+        println!("Unsafe to rebase");
+    } else {
         println!(
-            "{}: {:?}",
-            parent.message().unwrap().trim(),
-            children
-                .iter()
-                .map(|commit| commit.message().unwrap().trim())
-                .collect::<Vec<_>>(),
+            "git -C {} rebase {} {}",
+            repo.path().to_str().unwrap(),
+            upstream.name().unwrap(),
+            branch.name().unwrap().unwrap(),
         );
     }
 }
 
-fn short_name_to_oid(repo: &Repository, branch: &str) -> Oid {
-    repo.resolve_reference_from_short_name(branch)
+fn prefetch(repo: &Repository) {
+    let exit_status = Command::new("git")
+        .arg("-C")
+        .arg(repo.path())
+        .arg("fetch")
+        .arg("--prefetch")
+        .current_dir("/Users/adam/Documents/Git.nosync/safe-to-rebase")
+        .spawn()
         .unwrap()
-        .resolve()
-        .unwrap()
-        .target()
-        .unwrap()
+        .wait()
+        .unwrap();
+
+    if !exit_status.success() {
+        panic!("git exit status: {}", exit_status.code().unwrap());
+    }
 }
 
-fn get_commits_to_children(repo: &Repository) -> HashMap<Oid, Vec<Commit>> {
+fn find_all_references<'repo>(
+    repo: &'repo Repository,
+    exception: &Branch,
+) -> Vec<Reference<'repo>> {
+    let all_references = repo
+        .references()
+        .unwrap()
+        .map(Result::unwrap)
+        .filter(|reference| !references_the_same(reference, exception.get()));
+
+    if let Ok(exception_upstream) = exception.upstream() {
+        let exception_upstream = exception_upstream.into_reference();
+        let exception_upstream_prefetch = get_prefetch_reference(repo, &exception_upstream);
+
+        all_references
+            .filter(|reference| !references_the_same(reference, &exception_upstream))
+            .filter(|reference| !references_the_same(reference, &exception_upstream_prefetch))
+            .collect()
+    } else {
+        all_references.collect()
+    }
+}
+
+fn references_the_same(reference1: &Reference, reference2: &Reference) -> bool {
+    match (reference1.name(), reference2.name()) {
+        (Some(name1), Some(name2)) => name1 == name2,
+        _ => false,
+    }
+}
+
+fn get_prefetch_reference<'repo>(
+    repo: &'repo Repository,
+    reference: &Reference,
+) -> Reference<'repo> {
+    static EXPECTED_BEGINNING: &str = "refs/";
+    let reference_name = reference.name().unwrap();
+
+    assert!(reference.is_remote());
+    assert_eq!(
+        &reference_name[..EXPECTED_BEGINNING.len()],
+        EXPECTED_BEGINNING,
+    );
+
+    repo.find_reference(&format!(
+        "refs/prefetch/{}",
+        &reference_name[EXPECTED_BEGINNING.len()..],
+    ))
+    .unwrap()
+}
+
+fn get_commits_to_rebase<'repo>(
+    repo: &'repo Repository,
+    upstream: &Reference,
+    branch: &Branch,
+) -> HashSet<Oid> {
+    let mut revwalk = repo.revwalk().unwrap();
+    revwalk
+        .push(branch.get().peel_to_commit().unwrap().id())
+        .unwrap();
+    revwalk
+        .hide(upstream.peel_to_commit().unwrap().id())
+        .unwrap();
+
+    revwalk.map(Result::unwrap).collect()
+}
+
+fn look_for_commits(
+    repo: &Repository,
+    starting_points: &[Reference],
+    commits: &HashSet<Oid>,
+) -> bool {
     let mut revwalk = repo.revwalk().unwrap();
 
-    for reference in repo.references().unwrap() {
+    for reference in starting_points {
         revwalk
-            .push(reference.unwrap().peel_to_commit().unwrap().id())
+            .push(reference.peel_to_commit().unwrap().id())
             .unwrap();
     }
 
-    let mut commits_to_children: HashMap<Oid, Vec<Commit>> = HashMap::new();
-
-    for oid in revwalk {
-        let commit = repo.find_commit(oid.unwrap()).unwrap();
-        commits_to_children.entry(commit.id()).or_default();
-
-        for parent in commit.parents() {
-            commits_to_children
-                .entry(parent.id())
-                .or_default()
-                .push(commit.clone());
-        }
-    }
-
-    commits_to_children
-}
-
-fn get_commits_to_rebase(repo: &Repository, upstream: Oid, branch: Oid) -> Vec<Oid> {
-    let mut revwalk = repo.revwalk().unwrap();
-    revwalk.push(branch).unwrap();
-    revwalk.hide(upstream).unwrap();
-
-    revwalk.map(Result::unwrap).collect()
+    revwalk
+        .map(Result::unwrap)
+        .any(|oid| commits.contains(&oid))
 }
