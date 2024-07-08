@@ -15,6 +15,7 @@ pub fn safe_rebase(
     // Calculate upstream and branch
     let (upstream, branch) = get_upstream_and_branch(&repo, upstream, branch);
 
+    // Check if it's safe to rebase
     let safe_to_rebase = safe_to_rebase(&repo, &upstream, &branch);
 
     // Perform rebase
@@ -40,19 +41,7 @@ fn safe_to_rebase(repo: &Repository, upstream: &Reference, branch: &Branch) -> b
 }
 
 fn prefetch(repo: &Repository) {
-    let exit_status = Command::new("git")
-        .arg("-C")
-        .arg(repo.path())
-        .arg("fetch")
-        .arg("--prefetch")
-        .spawn()
-        .unwrap()
-        .wait()
-        .unwrap();
-
-    if !exit_status.success() {
-        panic!("git exit status: {}", exit_status.code().unwrap());
-    }
+    git(["-C", repo.path().to_str().unwrap(), "fetch", "--prefetch"]);
 }
 
 fn get_upstream_and_branch<'repo>(
@@ -166,12 +155,7 @@ fn rebase(
     interactive: bool,
     onto: Option<&str>,
 ) {
-    let mut args = Vec::from([
-        "git",
-        "-C",
-        repo.workdir().unwrap().to_str().unwrap(),
-        "rebase",
-    ]);
+    let mut args = Vec::from(["-C", repo.workdir().unwrap().to_str().unwrap(), "rebase"]);
 
     if interactive {
         args.push("--interactive");
@@ -185,5 +169,18 @@ fn rebase(
     args.push(upstream.name().unwrap());
     args.push(branch.name().unwrap().unwrap());
 
-    println!("{}", args.join(" "));
+    git(args);
+}
+
+fn git<'a>(args: impl IntoIterator<Item = &'a str>) {
+    let exit_status = Command::new("git")
+        .args(args)
+        .spawn()
+        .unwrap()
+        .wait()
+        .unwrap();
+
+    if !exit_status.success() {
+        panic!("git exit code: {}", exit_status.code().unwrap());
+    }
 }
