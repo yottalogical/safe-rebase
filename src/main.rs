@@ -16,9 +16,9 @@ fn main() {
 
     safe_rebase(
         repo_path.as_deref(),
-        upstream.as_ref().map(String::as_str),
-        branch.as_ref().map(String::as_str),
+        upstream.as_deref(),
+        branch.as_deref(),
         interactive,
-        onto.as_ref().map(String::as_str),
+        onto.as_deref(),
     );
 }

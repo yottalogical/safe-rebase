@@ -114,11 +114,7 @@ fn get_prefetch_reference<'repo>(
     .unwrap()
 }
 
-fn get_commits_to_rebase<'repo>(
-    repo: &'repo Repository,
-    upstream: &Reference,
-    branch: &Branch,
-) -> HashSet<Oid> {
+fn get_commits_to_rebase(repo: &Repository, upstream: &Reference, branch: &Branch) -> HashSet<Oid> {
     let mut revwalk = repo.revwalk().unwrap();
     revwalk
         .push(branch.get().peel_to_commit().unwrap().id())
