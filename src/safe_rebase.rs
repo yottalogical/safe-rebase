@@ -2,6 +2,8 @@ use std::{collections::HashSet, env::current_dir, path::Path, process::Command};
 
 use git2::{Branch, BranchType, Oid, Reference, Repository};
 
+mod tests;
+
 pub fn safe_rebase(
     repo_path: Option<&Path>,
     upstream: Option<&str>,
