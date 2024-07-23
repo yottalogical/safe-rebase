@@ -15,6 +15,7 @@ pub fn safe_rebase(
     upstream: Option<&str>,
     branch: Option<&str>,
     interactive: bool,
+    dry_run: bool,
     onto: Option<&str>,
 ) -> Result<(), ()> {
     // Get repo
@@ -29,7 +30,11 @@ pub fn safe_rebase(
     // Perform rebase
     match safe_to_rebase {
         Ok(()) => {
-            rebase(&repo, &upstream, &branch, interactive, onto);
+            if dry_run {
+                println!("Safe to rebase!");
+            } else {
+                rebase(&repo, &upstream, &branch, interactive, onto);
+            }
 
             Ok(())
         }

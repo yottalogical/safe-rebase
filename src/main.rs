@@ -11,6 +11,7 @@ fn main() -> ExitCode {
     let Cli {
         repo_path,
         interactive,
+        dry_run,
         onto,
         upstream,
         branch,
@@ -21,6 +22,7 @@ fn main() -> ExitCode {
         upstream.as_deref(),
         branch.as_deref(),
         interactive,
+        dry_run,
         onto.as_deref(),
     );
 

@@ -11,6 +11,9 @@ pub struct Cli {
     #[arg(short, long)]
     pub interactive: bool,
 
+    #[arg(short = 'n', long)]
+    pub dry_run: bool,
+
     #[arg(long)]
     pub onto: Option<String>,
 
