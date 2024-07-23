@@ -74,7 +74,8 @@ fn find_all_references<'repo>(
         .references()
         .unwrap()
         .map(Result::unwrap)
-        .filter(|reference| !references_the_same(reference, exception.get()));
+        .filter(|reference| !references_the_same(reference, exception.get()))
+        .filter(|reference| reference.name() != Some("refs/stash"));
 
     if let Ok(exception_upstream) = exception.upstream() {
         let exception_upstream = exception_upstream.into_reference();
