@@ -19,7 +19,10 @@ fn simple_safe() {
     let _commit_b = commit(&repo, main.name().unwrap(), "B", &[&commit_a]);
     let _commit_c = commit(&repo, feature.get().name().unwrap(), "C", &[&commit_a]);
 
-    assert!(call_safe_to_rebase(&repo, &main, &feature));
+    match call_safe_to_rebase(&repo, &main, &feature) {
+        Ok(()) => {}
+        Err(_) => panic!(),
+    };
 }
 
 #[test]
@@ -34,12 +37,26 @@ fn simple_unsafe() {
     let _commit_b = commit(&repo, main.name().unwrap(), "B", &[&commit_a]);
     let commit_c = commit(&repo, feature.get().name().unwrap(), "C", &[&commit_a]);
 
-    let _other_branch = repo.branch("other-branch", &commit_c, false).unwrap();
+    let other_branch = repo.branch("other-branch", &commit_c, false).unwrap();
 
-    assert!(!call_safe_to_rebase(&repo, &main, &feature));
+    match call_safe_to_rebase(&repo, &main, &feature) {
+        Ok(()) => panic!(),
+        Err(references) => {
+            let names: Vec<Option<&str>> = references
+                .iter()
+                .map(|reference| reference.name())
+                .collect();
+
+            assert_eq!(names, [other_branch.get().name()]);
+        }
+    };
 }
 
-fn call_safe_to_rebase(repo: &Repository, main: &Reference, feature: &Branch) -> bool {
+fn call_safe_to_rebase<'repo>(
+    repo: &'repo Repository,
+    main: &Reference,
+    feature: &Branch,
+) -> Result<(), Vec<Reference<'repo>>> {
     let main = repo.find_reference(main.name().unwrap()).unwrap();
     let feature = repo
         .find_branch(feature.name().unwrap().unwrap(), git2::BranchType::Local)

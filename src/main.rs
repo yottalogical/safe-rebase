@@ -1,3 +1,5 @@
+use std::process::ExitCode;
+
 use clap::Parser;
 use cli::Cli;
 use safe_rebase::safe_rebase;
@@ -5,7 +7,7 @@ use safe_rebase::safe_rebase;
 mod cli;
 mod safe_rebase;
 
-fn main() {
+fn main() -> ExitCode {
     let Cli {
         repo_path,
         interactive,
@@ -14,11 +16,16 @@ fn main() {
         branch,
     } = Cli::parse();
 
-    safe_rebase(
+    let result = safe_rebase(
         repo_path.as_deref(),
         upstream.as_deref(),
         branch.as_deref(),
         interactive,
         onto.as_deref(),
     );
+
+    match result {
+        Ok(()) => ExitCode::from(ExitCode::SUCCESS),
+        Err(()) => ExitCode::from(ExitCode::FAILURE),
+    }
 }

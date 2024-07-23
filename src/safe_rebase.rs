@@ -1,4 +1,10 @@
-use std::{collections::HashSet, env::current_dir, path::Path, process::Command};
+use std::{
+    collections::HashSet,
+    env::current_dir,
+    io::{stdin, stdout, Write},
+    path::Path,
+    process::Command,
+};
 
 use git2::{Branch, BranchType, Oid, Reference, Repository};
 
@@ -10,7 +16,7 @@ pub fn safe_rebase(
     branch: Option<&str>,
     interactive: bool,
     onto: Option<&str>,
-) {
+) -> Result<(), ()> {
     // Get repo
     let repo = Repository::discover(repo_path.unwrap_or(&current_dir().unwrap())).unwrap();
 
@@ -21,14 +27,25 @@ pub fn safe_rebase(
     let safe_to_rebase = safe_to_rebase(&repo, &upstream, &branch);
 
     // Perform rebase
-    if safe_to_rebase {
-        rebase(&repo, &upstream, &branch, interactive, onto);
-    } else {
-        println!("Unsafe to rebase");
+    match safe_to_rebase {
+        Ok(()) => {
+            rebase(&repo, &upstream, &branch, interactive, onto);
+
+            Ok(())
+        }
+        Err(references_with_commits) => {
+            report_unsafe_to_rebase(&repo, &upstream, &branch, &references_with_commits);
+
+            Err(())
+        }
     }
 }
 
-fn safe_to_rebase(repo: &Repository, upstream: &Reference, branch: &Branch) -> bool {
+fn safe_to_rebase<'repo>(
+    repo: &'repo Repository,
+    upstream: &Reference,
+    branch: &Branch,
+) -> Result<(), Vec<Reference<'repo>>> {
     // Prefetch
     prefetch(repo);
 
@@ -39,7 +56,7 @@ fn safe_to_rebase(repo: &Repository, upstream: &Reference, branch: &Branch) -> b
     let commits_to_rebase = get_commits_to_rebase(repo, upstream, branch);
 
     // Look for commits
-    !look_for_commits(repo, &references, upstream, &commits_to_rebase)
+    look_for_commits(repo, references, upstream, &commits_to_rebase)
 }
 
 fn prefetch(repo: &Repository) {
@@ -129,25 +146,34 @@ fn get_commits_to_rebase(repo: &Repository, upstream: &Reference, branch: &Branc
     revwalk.map(Result::unwrap).collect()
 }
 
-fn look_for_commits(
-    repo: &Repository,
-    starting_points: &[Reference],
+fn look_for_commits<'repo>(
+    repo: &'repo Repository,
+    starting_points: impl IntoIterator<Item = Reference<'repo>>,
     ignore: &Reference,
     commits: &HashSet<Oid>,
-) -> bool {
-    let mut revwalk = repo.revwalk().unwrap();
+) -> Result<(), Vec<Reference<'repo>>> {
+    let mut references_with_commits = Vec::new();
 
     for reference in starting_points {
+        let mut revwalk = repo.revwalk().unwrap();
         revwalk
             .push(reference.peel_to_commit().unwrap().id())
             .unwrap();
+        revwalk.hide(ignore.peel_to_commit().unwrap().id()).unwrap();
+
+        if revwalk
+            .map(Result::unwrap)
+            .any(|oid| commits.contains(&oid))
+        {
+            references_with_commits.push(reference);
+        }
     }
 
-    revwalk.hide(ignore.peel_to_commit().unwrap().id()).unwrap();
-
-    revwalk
-        .map(Result::unwrap)
-        .any(|oid| commits.contains(&oid))
+    if references_with_commits.is_empty() {
+        Ok(())
+    } else {
+        Err(references_with_commits)
+    }
 }
 
 fn rebase(
@@ -172,6 +198,37 @@ fn rebase(
     args.push(branch.name().unwrap().unwrap());
 
     git(repo, args);
+}
+
+fn report_unsafe_to_rebase(
+    repo: &Repository,
+    upstream: &Reference,
+    branch: &Branch,
+    references_with_commits: &[Reference],
+) {
+    print!("Unsafe to rebase. See why (y/n)? ");
+    stdout().flush().unwrap();
+
+    let mut input = String::new();
+    stdin().read_line(&mut input).unwrap();
+
+    if input.trim() == "y" {
+        let mut args = Vec::from([
+            "log",
+            "--graph",
+            "--oneline",
+            branch.get().name().unwrap(),
+            upstream.name().unwrap(),
+        ]);
+        args.append(
+            &mut references_with_commits
+                .iter()
+                .map(|reference| reference.name().unwrap())
+                .collect(),
+        );
+
+        git(repo, args);
+    }
 }
 
 fn git<'a>(repo: &Repository, args: impl IntoIterator<Item = &'a str>) {
