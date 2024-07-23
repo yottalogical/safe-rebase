@@ -39,7 +39,7 @@ fn safe_to_rebase(repo: &Repository, upstream: &Reference, branch: &Branch) -> b
     let commits_to_rebase = get_commits_to_rebase(repo, upstream, branch);
 
     // Look for commits
-    !look_for_commits(repo, &references, &commits_to_rebase)
+    !look_for_commits(repo, &references, upstream, &commits_to_rebase)
 }
 
 fn prefetch(repo: &Repository) {
@@ -132,6 +132,7 @@ fn get_commits_to_rebase(repo: &Repository, upstream: &Reference, branch: &Branc
 fn look_for_commits(
     repo: &Repository,
     starting_points: &[Reference],
+    ignore: &Reference,
     commits: &HashSet<Oid>,
 ) -> bool {
     let mut revwalk = repo.revwalk().unwrap();
@@ -141,6 +142,8 @@ fn look_for_commits(
             .push(reference.peel_to_commit().unwrap().id())
             .unwrap();
     }
+
+    revwalk.hide(ignore.peel_to_commit().unwrap().id()).unwrap();
 
     revwalk
         .map(Result::unwrap)
