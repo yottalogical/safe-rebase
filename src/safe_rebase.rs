@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     env::current_dir,
     io::{stdin, stdout, Write},
     path::Path,
@@ -153,24 +153,46 @@ fn get_commits_to_rebase(repo: &Repository, upstream: &Reference, branch: &Branc
 
 fn look_for_commits<'repo>(
     repo: &'repo Repository,
-    starting_points: impl IntoIterator<Item = Reference<'repo>>,
+    starting_points: Vec<Reference<'repo>>,
     ignore: &Reference,
     commits: &HashSet<Oid>,
 ) -> Result<(), Vec<Reference<'repo>>> {
-    let mut references_with_commits = Vec::new();
-
-    for reference in starting_points {
-        let mut revwalk = repo.revwalk().unwrap();
+    let mut revwalk = repo.revwalk().unwrap();
+    revwalk.hide(ignore.peel_to_commit().unwrap().id()).unwrap();
+    for reference in &starting_points {
         revwalk
             .push(reference.peel_to_commit().unwrap().id())
             .unwrap();
-        revwalk.hide(ignore.peel_to_commit().unwrap().id()).unwrap();
+    }
 
-        if revwalk
-            .map(Result::unwrap)
-            .any(|oid| commits.contains(&oid))
-        {
-            references_with_commits.push(reference);
+    let child_to_parent: HashMap<Oid, Vec<Oid>> = revwalk
+        .map(Result::unwrap)
+        .map(|oid| {
+            (
+                oid,
+                repo.find_commit(oid)
+                    .unwrap()
+                    .parents()
+                    .map(|parent| parent.id())
+                    .collect(),
+            )
+        })
+        .collect();
+
+    let mut references_with_commits = Vec::new();
+
+    for reference in starting_points {
+        let mut queue = Vec::from([reference.peel_to_commit().unwrap().id()]);
+
+        while let Some(child) = queue.pop() {
+            if commits.contains(&child) {
+                references_with_commits.push(reference);
+                break;
+            }
+
+            if let Some(parents) = child_to_parent.get(&child) {
+                queue.extend(parents);
+            }
         }
     }
 
