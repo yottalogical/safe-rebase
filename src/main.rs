@@ -27,7 +27,7 @@ fn main() -> ExitCode {
     );
 
     match result {
-        Ok(()) => ExitCode::from(ExitCode::SUCCESS),
-        Err(()) => ExitCode::from(ExitCode::FAILURE),
+        Ok(()) => ExitCode::SUCCESS,
+        Err(()) => ExitCode::FAILURE,
     }
 }
