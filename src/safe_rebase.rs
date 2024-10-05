@@ -3,7 +3,7 @@ use std::{
     env::current_dir,
     io::{stdin, stdout, Write},
     path::Path,
-    process::Command,
+    process::{Command, Stdio},
 };
 
 use git2::{Branch, BranchType, Oid, Reference, Repository};
@@ -65,7 +65,7 @@ fn safe_to_rebase<'repo>(
 }
 
 fn prefetch(repo: &Repository) {
-    git(repo, ["fetch", "--prefetch", "--prune"]);
+    git(repo, ["fetch", "--prefetch", "--prune"], true);
 }
 
 fn get_upstream_and_branch<'repo>(
@@ -224,7 +224,7 @@ fn rebase(
     args.push(upstream.name().unwrap());
     args.push(branch.name().unwrap().unwrap());
 
-    git(repo, args);
+    git(repo, args, false);
 }
 
 fn report_unsafe_to_rebase(
@@ -254,19 +254,20 @@ fn report_unsafe_to_rebase(
                 .collect(),
         );
 
-        git(repo, args);
+        git(repo, args, false);
     }
 }
 
-fn git<'a>(repo: &Repository, args: impl IntoIterator<Item = &'a str>) {
-    let exit_status = Command::new("git")
-        .arg("-C")
-        .arg(repo.workdir().unwrap())
-        .args(args)
-        .spawn()
-        .unwrap()
-        .wait()
-        .unwrap();
+fn git<'a>(repo: &Repository, args: impl IntoIterator<Item = &'a str>, hide_output: bool) {
+    let mut command = Command::new("git");
+    command.arg("-C").arg(repo.workdir().unwrap());
+    command.args(args);
+
+    if hide_output {
+        command.stderr(Stdio::null());
+    }
+
+    let exit_status = command.spawn().unwrap().wait().unwrap();
 
     if !exit_status.success() {
         panic!("git exit code: {}", exit_status.code().unwrap());
