@@ -65,7 +65,7 @@ fn safe_to_rebase<'repo>(
 }
 
 fn prefetch(repo: &Repository) {
-    git(repo, ["fetch", "--prefetch"]);
+    git(repo, ["fetch", "--prefetch", "--prune"]);
 }
 
 fn get_upstream_and_branch<'repo>(
