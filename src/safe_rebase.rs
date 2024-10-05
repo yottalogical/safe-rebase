@@ -35,9 +35,16 @@ pub fn safe_rebase(
 
                 Ok(())
             } else {
-                rebase(&repo, &upstream, &branch, interactive, onto)
-                    .map(|_| ())
-                    .map_err(|_| ())
+                let result = rebase(&repo, &upstream, &branch, interactive, onto);
+
+                match result {
+                    Ok(_) => {
+                        println!("Please run `git push --force-with-lease` soon.");
+
+                        Ok(())
+                    }
+                    Err(_) => Err(()),
+                }
             }
         }
         Err(references_with_commits) => {
