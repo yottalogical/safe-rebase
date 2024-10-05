@@ -3,7 +3,7 @@ use std::{
     env::current_dir,
     io::{stdin, stdout, Write},
     path::Path,
-    process::{Command, Stdio},
+    process::{Command, ExitStatus, Stdio},
 };
 
 use git2::{Branch, BranchType, Oid, Reference, Repository};
@@ -32,11 +32,13 @@ pub fn safe_rebase(
         Ok(()) => {
             if dry_run {
                 println!("Safe to rebase!");
-            } else {
-                rebase(&repo, &upstream, &branch, interactive, onto);
-            }
 
-            Ok(())
+                Ok(())
+            } else {
+                rebase(&repo, &upstream, &branch, interactive, onto)
+                    .map(|_| ())
+                    .map_err(|_| ())
+            }
         }
         Err(references_with_commits) => {
             report_unsafe_to_rebase(&repo, &upstream, &branch, &references_with_commits);
@@ -65,7 +67,7 @@ fn safe_to_rebase<'repo>(
 }
 
 fn prefetch(repo: &Repository) {
-    git(repo, ["fetch", "--prefetch", "--prune"], true);
+    git(repo, ["fetch", "--prefetch", "--prune"], true).unwrap();
 }
 
 fn get_upstream_and_branch<'repo>(
@@ -209,7 +211,7 @@ fn rebase(
     branch: &Branch,
     interactive: bool,
     onto: Option<&str>,
-) {
+) -> Result<ExitStatus, ExitStatus> {
     let mut args = Vec::from(["rebase"]);
 
     if interactive {
@@ -224,7 +226,7 @@ fn rebase(
     args.push(upstream.name().unwrap());
     args.push(branch.name().unwrap().unwrap());
 
-    git(repo, args, false);
+    git(repo, args, false)
 }
 
 fn report_unsafe_to_rebase(
@@ -254,11 +256,15 @@ fn report_unsafe_to_rebase(
                 .collect(),
         );
 
-        git(repo, args, false);
+        git(repo, args, false).unwrap();
     }
 }
 
-fn git<'a>(repo: &Repository, args: impl IntoIterator<Item = &'a str>, hide_output: bool) {
+fn git<'a>(
+    repo: &Repository,
+    args: impl IntoIterator<Item = &'a str>,
+    hide_output: bool,
+) -> Result<ExitStatus, ExitStatus> {
     let mut command = Command::new("git");
     command.arg("-C").arg(repo.workdir().unwrap());
     command.args(args);
@@ -269,7 +275,9 @@ fn git<'a>(repo: &Repository, args: impl IntoIterator<Item = &'a str>, hide_outp
 
     let exit_status = command.spawn().unwrap().wait().unwrap();
 
-    if !exit_status.success() {
-        panic!("git exit code: {}", exit_status.code().unwrap());
+    if exit_status.success() {
+        Ok(exit_status)
+    } else {
+        Err(exit_status)
     }
 }
