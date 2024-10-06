@@ -244,7 +244,23 @@ fn report_unsafe_to_rebase(
     branch: &Branch,
     references_with_commits: &[Reference],
 ) {
-    print!("Unsafe to rebase. See why (y/n)? ");
+    let references = english_list(
+        &references_with_commits
+            .iter()
+            .map(|reference| reference.shorthand().unwrap())
+            .collect::<Vec<&str>>(),
+    );
+
+    println!(
+        "Unsafe to rebase. {} contain{} commits you are attempting to rebase.",
+        references,
+        if references_with_commits.len() == 1 {
+            "s"
+        } else {
+            ""
+        },
+    );
+    print!("See the graph (y/n)? ",);
     stdout().flush().unwrap();
 
     let mut input = String::new();
@@ -267,6 +283,24 @@ fn report_unsafe_to_rebase(
         );
 
         git(repo, args, false).unwrap();
+    }
+}
+
+fn english_list(items: &[&str]) -> String {
+    match items.len() {
+        0 => String::new(),
+        1 => items[0].to_string(),
+        2 => format!("{} and {}", items[0], items[1]),
+        _ => {
+            let mut result = String::new();
+            for item in &items[..items.len() - 1] {
+                result.push_str(item);
+                result.push_str(", ");
+            }
+            result.push_str("and ");
+            result.push_str(items.last().unwrap());
+            result
+        }
     }
 }
 
