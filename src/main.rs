@@ -13,6 +13,7 @@ fn main() -> ExitCode {
         interactive,
         dry_run,
         onto,
+        autostash,
         upstream,
         branch,
     } = Cli::parse();
@@ -24,6 +25,7 @@ fn main() -> ExitCode {
         interactive,
         dry_run,
         onto.as_deref(),
+        autostash,
     );
 
     match result {

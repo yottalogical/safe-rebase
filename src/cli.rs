@@ -17,6 +17,9 @@ pub struct Cli {
     #[arg(long)]
     pub onto: Option<String>,
 
+    #[arg(long)]
+    pub autostash: bool,
+
     pub upstream: Option<String>,
     pub branch: Option<String>,
 }

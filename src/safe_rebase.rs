@@ -17,6 +17,7 @@ pub fn safe_rebase(
     interactive: bool,
     dry_run: bool,
     onto: Option<&str>,
+    autostash: bool,
 ) -> Result<(), ()> {
     // Get repo
     let repo = Repository::discover(repo_path.unwrap_or(&current_dir().unwrap())).unwrap();
@@ -35,7 +36,7 @@ pub fn safe_rebase(
 
                 Ok(())
             } else {
-                let result = rebase(&repo, &upstream, &branch, interactive, onto);
+                let result = rebase(&repo, &upstream, &branch, interactive, onto, autostash);
 
                 match result {
                     Ok(_) => {
@@ -219,6 +220,7 @@ fn rebase(
     branch: &Branch,
     interactive: bool,
     onto: Option<&str>,
+    autostash: bool,
 ) -> Result<ExitStatus, ExitStatus> {
     let mut args = Vec::from(["rebase"]);
 
@@ -229,6 +231,10 @@ fn rebase(
     if let Some(onto) = onto {
         args.push("--onto");
         args.push(onto);
+    }
+
+    if autostash {
+        args.push("--autostash");
     }
 
     let upstream_id = upstream.id().to_string();
