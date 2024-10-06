@@ -6,7 +6,7 @@ use std::{
     process::{Command, ExitStatus, Stdio},
 };
 
-use git2::{Branch, BranchType, Oid, Reference, Repository};
+use git2::{Branch, BranchType, Commit, Oid, Reference, Repository};
 
 mod tests;
 
@@ -57,7 +57,7 @@ pub fn safe_rebase(
 
 fn safe_to_rebase<'repo>(
     repo: &'repo Repository,
-    upstream: &Reference,
+    upstream: &Commit,
     branch: &Branch,
 ) -> Result<(), Vec<Reference<'repo>>> {
     // Prefetch
@@ -81,7 +81,7 @@ fn get_upstream_and_branch<'repo>(
     repo: &'repo Repository,
     upstream: Option<&str>,
     branch: Option<&str>,
-) -> (Reference<'repo>, Branch<'repo>) {
+) -> (Commit<'repo>, Branch<'repo>) {
     let branch = if let Some(branch) = branch {
         repo.find_branch(branch, BranchType::Local).unwrap()
     } else {
@@ -89,9 +89,12 @@ fn get_upstream_and_branch<'repo>(
     };
 
     let upstream = if let Some(upstream) = upstream {
-        repo.resolve_reference_from_short_name(upstream).unwrap()
+        match repo.resolve_reference_from_short_name(upstream) {
+            Ok(upstream) => upstream.peel_to_commit().unwrap(),
+            Err(_) => repo.find_commit_by_prefix(upstream).unwrap(),
+        }
     } else {
-        branch.upstream().unwrap().into_reference()
+        branch.upstream().unwrap().get().peel_to_commit().unwrap()
     };
 
     (upstream, branch)
@@ -148,14 +151,12 @@ fn get_prefetch_reference<'repo>(
     .unwrap()
 }
 
-fn get_commits_to_rebase(repo: &Repository, upstream: &Reference, branch: &Branch) -> HashSet<Oid> {
+fn get_commits_to_rebase(repo: &Repository, upstream: &Commit, branch: &Branch) -> HashSet<Oid> {
     let mut revwalk = repo.revwalk().unwrap();
     revwalk
         .push(branch.get().peel_to_commit().unwrap().id())
         .unwrap();
-    revwalk
-        .hide(upstream.peel_to_commit().unwrap().id())
-        .unwrap();
+    revwalk.hide(upstream.id()).unwrap();
 
     revwalk.map(Result::unwrap).collect()
 }
@@ -163,11 +164,11 @@ fn get_commits_to_rebase(repo: &Repository, upstream: &Reference, branch: &Branc
 fn look_for_commits<'repo>(
     repo: &'repo Repository,
     starting_points: Vec<Reference<'repo>>,
-    ignore: &Reference,
+    ignore: &Commit,
     commits: &HashSet<Oid>,
 ) -> Result<(), Vec<Reference<'repo>>> {
     let mut revwalk = repo.revwalk().unwrap();
-    revwalk.hide(ignore.peel_to_commit().unwrap().id()).unwrap();
+    revwalk.hide(ignore.id()).unwrap();
     for reference in &starting_points {
         revwalk
             .push(reference.peel_to_commit().unwrap().id())
@@ -214,7 +215,7 @@ fn look_for_commits<'repo>(
 
 fn rebase(
     repo: &Repository,
-    upstream: &Reference,
+    upstream: &Commit,
     branch: &Branch,
     interactive: bool,
     onto: Option<&str>,
@@ -230,7 +231,8 @@ fn rebase(
         args.push(onto);
     }
 
-    args.push(upstream.name().unwrap());
+    let upstream_id = upstream.id().to_string();
+    args.push(&upstream_id);
     args.push(branch.name().unwrap().unwrap());
 
     git(repo, args, false)
@@ -238,7 +240,7 @@ fn rebase(
 
 fn report_unsafe_to_rebase(
     repo: &Repository,
-    upstream: &Reference,
+    upstream: &Commit,
     branch: &Branch,
     references_with_commits: &[Reference],
 ) {
@@ -249,12 +251,13 @@ fn report_unsafe_to_rebase(
     stdin().read_line(&mut input).unwrap();
 
     if input.trim() == "y" {
+        let upstream_id = upstream.id().to_string();
         let mut args = Vec::from([
             "log",
             "--graph",
             "--oneline",
             branch.get().name().unwrap(),
-            upstream.name().unwrap(),
+            &upstream_id,
         ]);
         args.append(
             &mut references_with_commits

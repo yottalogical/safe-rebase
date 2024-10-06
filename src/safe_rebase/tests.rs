@@ -57,12 +57,11 @@ fn call_safe_to_rebase<'repo>(
     main: &Reference,
     feature: &Branch,
 ) -> Result<(), Vec<Reference<'repo>>> {
-    let main = repo.find_reference(main.name().unwrap()).unwrap();
     let feature = repo
         .find_branch(feature.name().unwrap().unwrap(), git2::BranchType::Local)
         .unwrap();
 
-    safe_to_rebase(&repo, &main, &feature)
+    safe_to_rebase(&repo, &main.peel_to_commit().unwrap(), &feature)
 }
 
 fn tmp_repo() -> Repository {
