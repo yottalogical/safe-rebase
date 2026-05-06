@@ -3,7 +3,7 @@
 use std::{path::PathBuf, str::FromStr};
 
 use git2::{Branch, Commit, Reference, Repository, Signature};
-use rand::{distributions::Alphanumeric, Rng};
+use rand::{distr::Alphanumeric, RngExt};
 
 use super::safe_to_rebase;
 
@@ -65,7 +65,7 @@ fn call_safe_to_rebase<'repo>(
 }
 
 fn tmp_repo() -> Repository {
-    let random_string: String = rand::thread_rng()
+    let random_string: String = rand::rng()
         .sample_iter(&Alphanumeric)
         .take(16)
         .map(char::from)
